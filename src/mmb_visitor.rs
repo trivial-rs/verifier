@@ -1,7 +1,7 @@
-use crate::statement_iter::{Statement, StatementIter};
+use crate::kernel::opcode;
+use crate::kernel::Table_;
+use crate::statement_iter::{Statement, StatementIter, StatementOwned};
 use mmb_parser::{ProofStream, UnifyStream, Visitor};
-use trivial_kernel::opcode;
-use trivial_kernel::Table_;
 
 pub struct UnifyCommands {
     data: Vec<opcode::Command<opcode::Unify>>,
@@ -33,10 +33,10 @@ impl ProofStream for ProofCommands {
     }
 }
 
-use trivial_kernel::verifier::{Sort_, Term_, Theorem_, Type_};
+use crate::kernel::{Sort_, Term_, Theorem_, Var_};
 
 pub struct MmbVisitor<'a> {
-    binders: Vec<Type_>,
+    binders: Vec<Var_>,
     slices: Vec<&'a [u8]>,
     statements: Vec<Statement>,
     uni_streams: UnifyCommands,
@@ -45,6 +45,11 @@ pub struct MmbVisitor<'a> {
     sorts: Vec<Sort_>,
     terms: Vec<Term_>,
     theorems: Vec<Theorem_>,
+
+    sort_indices: Vec<usize>,
+    axiom_indices: Vec<usize>,
+    term_indices: Vec<usize>,
+    theorem_indices: Vec<usize>,
 }
 
 impl<'a> MmbVisitor<'a> {
@@ -64,10 +69,14 @@ impl<'a> MmbVisitor<'a> {
             sorts: Vec::new(),
             terms: Vec::new(),
             theorems: Vec::new(),
+            sort_indices: Vec::new(),
+            axiom_indices: Vec::new(),
+            term_indices: Vec::new(),
+            theorem_indices: Vec::new(),
         }
     }
 
-    pub fn into_table(self) -> (trivial_kernel::Table_, StatementIter) {
+    pub fn into_table(self) -> (crate::kernel::Table_, StatementIter) {
         (
             Table_ {
                 sorts: self.sorts,
@@ -79,10 +88,30 @@ impl<'a> MmbVisitor<'a> {
             StatementIter::new(self.statements, self.proof_stream.data),
         )
     }
+
+    pub fn into_table_owned(self) -> (crate::kernel::Table_, StatementOwned) {
+        (
+            Table_ {
+                sorts: self.sorts,
+                theorems: self.theorems,
+                terms: self.terms,
+                unify: self.uni_streams.data,
+                binders: self.binders,
+            },
+            StatementOwned::new(
+                self.statements,
+                self.proof_stream.data,
+                self.sort_indices,
+                self.axiom_indices,
+                self.term_indices,
+                self.theorem_indices,
+            ),
+        )
+    }
 }
 
 impl<'a> Visitor<'a> for MmbVisitor<'a> {
-    type Binder = Type_;
+    type Binder = Var_;
     type Sort = Sort_;
     type Statement = opcode::Statement;
     type Proof = ProofCommands;
@@ -101,6 +130,18 @@ impl<'a> Visitor<'a> for MmbVisitor<'a> {
     ) {
         self.slices.push(slice);
 
+        let idx = self.statements.len();
+
+        match statement {
+            opcode::Statement::Sort => self.sort_indices.push(idx),
+            opcode::Statement::Axiom => self.axiom_indices.push(idx),
+            opcode::Statement::TermDef => self.term_indices.push(idx),
+            opcode::Statement::Thm => self.theorem_indices.push(idx),
+            opcode::Statement::LocalDef => self.term_indices.push(idx),
+            opcode::Statement::LocalTerm => self.theorem_indices.push(idx),
+            _ => {}
+        }
+
         self.statements.push(Statement {
             code: statement,
             proof,
@@ -117,7 +158,7 @@ impl<'a> Visitor<'a> for MmbVisitor<'a> {
         &mut self.proof_stream
     }
 
-    fn try_reserve_binder_slice(&mut self, nr: usize) -> Option<(&mut [Type_], usize)> {
+    fn try_reserve_binder_slice(&mut self, nr: usize) -> Option<(&mut [Var_], usize)> {
         let len = self.binders.len();
         let new_len = len + nr;
         self.binders.resize(new_len, From::from(0));
