@@ -134,7 +134,10 @@ impl<'a> Visitor<'a> for MmbVisitor<'a> {
 
         match statement {
             opcode::Statement::Sort => self.sort_indices.push(idx),
-            opcode::Statement::Axiom => self.axiom_indices.push(idx),
+            opcode::Statement::Axiom => {
+                self.axiom_indices.push(idx);
+                self.theorem_indices.push(idx)
+            }
             opcode::Statement::TermDef => self.term_indices.push(idx),
             opcode::Statement::Thm => self.theorem_indices.push(idx),
             opcode::Statement::LocalDef => self.term_indices.push(idx),
