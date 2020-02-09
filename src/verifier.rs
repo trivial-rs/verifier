@@ -37,7 +37,10 @@ impl Verifier {
     pub fn verify_unify(&self) -> KResult {
         let mut i = 0;
 
-        let f = |x: u32| self.table.get_term(x).unwrap().get_binders().len() as u32;
+        let f = |x: u32| {
+            let term = self.table.get_term(x)?;
+            Some(term.get_binders().len() as u32)
+        };
 
         while let Some(term) = self.table.get_term(i) {
             let unify = term.get_command_stream();
@@ -47,7 +50,8 @@ impl Verifier {
                 .ok_or(crate::kernel::error::Kind::InvalidUnifyCommandIndex)?;
 
             let proof =
-                trivial_compiler::unify_to_proof(term.get_binders().len() as u32, unify.iter(), f);
+                trivial_compiler::unify_to_proof(term.get_binders().len() as u32, unify.iter(), f)
+                    .map_err(|_| crate::kernel::error::Kind::InvalidTerm)?;
 
             let binders = term.get_binders();
             let binders = self
@@ -74,7 +78,8 @@ impl Verifier {
                 .ok_or(crate::kernel::error::Kind::InvalidUnifyCommandIndex)?;
 
             let proof =
-                trivial_compiler::unify_to_proof(thm.get_binders().len() as u32, unify.iter(), f);
+                trivial_compiler::unify_to_proof(thm.get_binders().len() as u32, unify.iter(), f)
+                    .map_err(|_| crate::kernel::error::Kind::InvalidTerm)?;
 
             let binders = thm.get_binders();
             let binders = self
@@ -129,7 +134,10 @@ impl Verifier {
         id: u32,
         context: &'a mut Context<Store_>,
     ) -> KResult<(&'a [PackedPtr], &'a [PackedPtr], PackedPtr)> {
-        let f = |x: u32| self.table.get_term(x).unwrap().get_binders().len() as u32;
+        let f = |x: u32| {
+            let term = self.table.get_term(x)?;
+            Some(term.get_binders().len() as u32)
+        };
 
         let thm = self
             .table
@@ -157,7 +165,8 @@ impl Verifier {
         context.allocate_binders(&self.table, state.get_current_sort(), binders)?;
 
         let proof =
-            trivial_compiler::unify_to_proof(thm.get_binders().len() as u32, unify.iter(), f);
+            trivial_compiler::unify_to_proof(thm.get_binders().len() as u32, unify.iter(), f)
+                .map_err(|_| crate::kernel::error::Kind::InvalidTerm)?;
 
         let mut stepper = proof::Stepper::new(false, state, proof.iter().cloned());
 
