@@ -1,4 +1,4 @@
-mod mmb_visitor;
+pub mod mmb_visitor;
 mod statement_iter;
 pub mod verifier;
 
