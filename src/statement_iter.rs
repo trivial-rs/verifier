@@ -60,11 +60,13 @@ impl StatementOwned {
         }
     }
 
-    pub fn seek_to(&mut self, idx: usize, state: &mut State) {
+    pub fn seek_to(&mut self, idx: usize) -> State {
+        let mut state = State::default();
+
         for i in self.data.iter().take(idx) {
             use opcode::Statement;
             match i.code {
-                Statement::End => return,
+                Statement::End => break,
                 Statement::Sort => state.increment_current_sort(),
                 Statement::TermDef => state.increment_current_term(),
                 Statement::LocalDef => state.increment_current_term(),
@@ -75,6 +77,8 @@ impl StatementOwned {
         }
 
         self.idx = idx;
+
+        state
     }
 }
 

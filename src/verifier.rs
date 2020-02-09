@@ -1,5 +1,6 @@
 use crate::kernel::{
-    stream::proof, Context, KResult, State, Stepper, Store_, Table, Table_, Term, Theorem, Var_,
+    context::PackedPtr, stream::proof, Context, KResult, State, Stepper, Store_, Table, Table_,
+    Term, Theorem, Var_,
 };
 use crate::mmb_visitor::MmbVisitor;
 use crate::statement_iter::StatementOwned;
@@ -90,7 +91,7 @@ impl Verifier {
 
         let idx = *stream.term_indices.get(idx).unwrap();
 
-        stream.seek_to(idx, &mut self.state);
+        self.state = stream.seek_to(idx);
     }
 
     pub fn seek_theorem(&mut self, idx: usize) {
@@ -98,16 +99,20 @@ impl Verifier {
 
         let idx = *stream.theorem_indices.get(idx).unwrap();
 
-        stream.seek_to(idx, &mut self.state);
+        self.state = stream.seek_to(idx);
     }
 
     pub fn seek(&mut self, idx: usize) {
         let stream = self.stepper.get_stream_mut();
 
-        stream.seek_to(idx, &mut self.state);
+        self.state = stream.seek_to(idx);
     }
 
-    pub fn create_theorem_application(&self, id: u32) -> Option<(Context<Store_>, usize, usize)> {
+    pub fn create_theorem_application<'a>(
+        &self,
+        id: u32,
+        context: &'a mut Context<Store_>,
+    ) -> Option<(&'a [PackedPtr], &'a [PackedPtr], PackedPtr)> {
         let f = |x: u32| self.table.get_term(x).unwrap().get_binders().len() as u32;
 
         if let Some(thm) = self.table.get_theorem(id) {
@@ -119,22 +124,25 @@ impl Verifier {
 
             let binders = self.table.get_binders(binders).unwrap();
 
-            let mut dummy_context = Context::default();
+            context.clear_except_store();
 
-            dummy_context
-                .allocate_binders(&self.table, self.state.get_current_sort(), binders)
+            let state = State::from_table(&self.table);
+
+            context
+                .allocate_binders(&self.table, state.get_current_sort(), binders)
                 .unwrap();
 
             let proof =
                 trivial_compiler::unify_to_proof(thm.get_binders().len() as u32, unify.iter(), f);
 
-            let mut stepper = proof::Stepper::new(false, self.state, proof.iter().cloned());
+            let mut stepper = proof::Stepper::new(false, state, proof.iter().cloned());
 
-            stepper.run(&mut dummy_context, &self.table).unwrap();
+            stepper.run(context, &self.table).unwrap();
 
-            let nr_hyps = dummy_context.get_hyp_stack().len();
+            let args = context.get_proof_heap().as_slice().get(..nr_args).unwrap();
+            let res = context.get_proof_stack().peek().unwrap();
 
-            Some((dummy_context, nr_args, nr_hyps))
+            Some((args, context.get_hyp_stack().as_slice(), *res))
         } else {
             None
         }
