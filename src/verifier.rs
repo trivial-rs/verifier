@@ -34,72 +34,88 @@ impl Verifier {
         })
     }
 
-    pub fn verify_unify(&self) {
+    pub fn verify_unify(&self) -> KResult {
         let mut i = 0;
 
         let f = |x: u32| self.table.get_term(x).unwrap().get_binders().len() as u32;
 
         while let Some(term) = self.table.get_term(i) {
             let unify = term.get_command_stream();
-            let unify = self.table.get_unify_commands(unify).unwrap();
+            let unify = self
+                .table
+                .get_unify_commands(unify)
+                .ok_or(crate::kernel::error::Kind::InvalidUnifyCommandIndex)?;
 
             let proof =
                 trivial_compiler::unify_to_proof(term.get_binders().len() as u32, unify.iter(), f);
 
             let binders = term.get_binders();
-            let binders = self.table.get_binders(binders).unwrap();
+            let binders = self
+                .table
+                .get_binders(binders)
+                .ok_or(crate::kernel::error::Kind::InvalidBinderIndices)?;
 
             let mut dummy_context = Context::<Store_>::default();
 
-            dummy_context
-                .allocate_binders(&self.table, self.state.get_current_sort(), binders)
-                .unwrap();
+            dummy_context.allocate_binders(&self.table, self.state.get_current_sort(), binders)?;
 
             let mut stepper = proof::Stepper::new(false, self.state, proof.iter().cloned());
 
-            stepper.run(&mut dummy_context, &self.table).unwrap();
+            stepper.run(&mut dummy_context, &self.table)?;
 
             i += 1;
         }
 
         while let Some(thm) = self.table.get_theorem(i) {
             let unify = thm.get_unify_commands();
-            let unify = self.table.get_unify_commands(unify).unwrap();
+            let unify = self
+                .table
+                .get_unify_commands(unify)
+                .ok_or(crate::kernel::error::Kind::InvalidUnifyCommandIndex)?;
 
             let proof =
                 trivial_compiler::unify_to_proof(thm.get_binders().len() as u32, unify.iter(), f);
 
             let binders = thm.get_binders();
-            let binders = self.table.get_binders(binders).unwrap();
+            let binders = self
+                .table
+                .get_binders(binders)
+                .ok_or(crate::kernel::error::Kind::InvalidBinderIndices)?;
 
             let mut dummy_context = Context::<Store_>::default();
 
-            dummy_context
-                .allocate_binders(&self.table, self.state.get_current_sort(), binders)
-                .unwrap();
+            dummy_context.allocate_binders(&self.table, self.state.get_current_sort(), binders)?;
 
             let mut stepper = proof::Stepper::new(false, self.state, proof.iter().cloned());
 
-            stepper.run(&mut dummy_context, &self.table).unwrap();
+            stepper.run(&mut dummy_context, &self.table)?;
 
             i += 1;
         }
+
+        Ok(())
     }
 
-    pub fn seek_term(&mut self, idx: usize) {
+    pub fn seek_term(&mut self, idx: usize) -> bool {
         let stream = self.stepper.get_stream_mut();
 
-        let idx = *stream.term_indices.get(idx).unwrap();
-
-        self.state = stream.seek_to(idx);
+        if let Some(idx) = stream.term_indices.get(idx).copied() {
+            self.state = stream.seek_to(idx);
+            true
+        } else {
+            false
+        }
     }
 
-    pub fn seek_theorem(&mut self, idx: usize) {
+    pub fn seek_theorem(&mut self, idx: usize) -> bool {
         let stream = self.stepper.get_stream_mut();
 
-        let idx = *stream.theorem_indices.get(idx).unwrap();
-
-        self.state = stream.seek_to(idx);
+        if let Some(idx) = stream.theorem_indices.get(idx).copied() {
+            self.state = stream.seek_to(idx);
+            true
+        } else {
+            false
+        }
     }
 
     pub fn seek(&mut self, idx: usize) {
@@ -112,40 +128,52 @@ impl Verifier {
         &self,
         id: u32,
         context: &'a mut Context<Store_>,
-    ) -> Option<(&'a [PackedPtr], &'a [PackedPtr], PackedPtr)> {
+    ) -> KResult<(&'a [PackedPtr], &'a [PackedPtr], PackedPtr)> {
         let f = |x: u32| self.table.get_term(x).unwrap().get_binders().len() as u32;
 
-        if let Some(thm) = self.table.get_theorem(id) {
-            let unify = thm.get_unify_commands();
-            let unify = self.table.get_unify_commands(unify).unwrap();
+        let thm = self
+            .table
+            .get_theorem(id)
+            .ok_or(crate::kernel::error::Kind::InvalidTheorem)?;
 
-            let binders = thm.get_binders();
-            let nr_args = binders.len();
+        let unify = thm.get_unify_commands();
+        let unify = self
+            .table
+            .get_unify_commands(unify)
+            .ok_or(crate::kernel::error::Kind::InvalidUnifyCommandIndex)?;
 
-            let binders = self.table.get_binders(binders).unwrap();
+        let binders = thm.get_binders();
+        let nr_args = binders.len();
 
-            context.clear_except_store();
+        let binders = self
+            .table
+            .get_binders(binders)
+            .ok_or(crate::kernel::error::Kind::InvalidBinderIndices)?;
 
-            let state = State::from_table(&self.table);
+        context.clear_except_store();
 
-            context
-                .allocate_binders(&self.table, state.get_current_sort(), binders)
-                .unwrap();
+        let state = State::from_table(&self.table);
 
-            let proof =
-                trivial_compiler::unify_to_proof(thm.get_binders().len() as u32, unify.iter(), f);
+        context.allocate_binders(&self.table, state.get_current_sort(), binders)?;
 
-            let mut stepper = proof::Stepper::new(false, state, proof.iter().cloned());
+        let proof =
+            trivial_compiler::unify_to_proof(thm.get_binders().len() as u32, unify.iter(), f);
 
-            stepper.run(context, &self.table).unwrap();
+        let mut stepper = proof::Stepper::new(false, state, proof.iter().cloned());
 
-            let args = context.get_proof_heap().as_slice().get(..nr_args).unwrap();
-            let res = context.get_proof_stack().peek().unwrap();
+        stepper.run(context, &self.table)?;
 
-            Some((args, context.get_hyp_stack().as_slice(), *res))
-        } else {
-            None
-        }
+        let args = context
+            .get_proof_heap()
+            .as_slice()
+            .get(..nr_args)
+            .ok_or(crate::kernel::error::Kind::InvalidHeapIndex)?;
+        let res = context
+            .get_proof_stack()
+            .peek()
+            .ok_or(crate::kernel::error::Kind::ProofStackUnderflow)?;
+
+        Ok((args, context.get_hyp_stack().as_slice(), *res))
     }
 
     pub fn step<F: FnMut(Action, &Self)>(&mut self, f: &mut F) -> KResult<Option<()>> {

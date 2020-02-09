@@ -162,12 +162,14 @@ impl Iterator for StatementOwned {
 impl StatementStream for StatementIter {
     type ProofStream = ProofIter;
 
-    fn take_proof_stream(&mut self) -> Self::ProofStream {
+    fn take_proof_stream(&mut self) -> Option<Self::ProofStream> {
         let len = self.ps.unwrap_or((0, 0));
-        ProofIter {
-            proofs: self.proofs.take().unwrap(),
+        let proofs = self.proofs.take()?;
+
+        Some(ProofIter {
+            proofs,
             max_len: (len.1 - len.0),
-        }
+        })
     }
 
     fn put_proof_stream(&mut self, proofs: Self::ProofStream) {
@@ -178,13 +180,15 @@ impl StatementStream for StatementIter {
 impl StatementStream for StatementOwned {
     type ProofStream = ProofOwned;
 
-    fn take_proof_stream(&mut self) -> Self::ProofStream {
+    fn take_proof_stream(&mut self) -> Option<Self::ProofStream> {
         let len = self.ps.unwrap_or((0, 0));
-        ProofOwned {
-            proofs: self.proofs.take().unwrap(),
+        let proofs = self.proofs.take()?;
+
+        Some(ProofOwned {
+            proofs,
             idx: len.0,
             max_len: (len.1 - len.0),
-        }
+        })
     }
 
     fn put_proof_stream(&mut self, proofs: Self::ProofStream) {
