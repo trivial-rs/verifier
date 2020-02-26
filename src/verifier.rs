@@ -7,11 +7,30 @@ use crate::statement_iter::StatementOwned;
 use mmb_parser::Mmb;
 
 use crate::kernel::stream::statement::Action;
+use std::collections::HashMap;
+
+#[derive(Default)]
+struct Index {
+    data: HashMap<String, usize>,
+    names: Vec<String>,
+}
+
+impl mmb_parser::index::Visitor for Index {
+    fn visit<'a>(&mut self, idx: usize, _ptr: u64, name: &'a [u8]) {
+        let stripped = &name[..(name.len() - 1)];
+
+        let string = std::str::from_utf8(stripped).unwrap().to_string();
+
+        self.data.insert(string.clone(), idx);
+        self.names.push(string);
+    }
+}
 
 pub struct Verifier {
     pub table: Table_,
     pub context: Context<Store_>,
     pub state: State,
+    theorem_index: Index,
     stepper: Stepper<StatementOwned, Var_>,
 }
 
@@ -22,6 +41,10 @@ impl Verifier {
         let mut visitor = MmbVisitor::new();
         data.visit(&mut visitor).ok()?;
 
+        let mut index = Index::default();
+
+        data.visit_theorem_index(&mut index);
+
         let (table, stream) = visitor.into_table_owned();
 
         let stepper = Stepper::new(stream);
@@ -31,7 +54,16 @@ impl Verifier {
             stepper,
             context: Context::default(),
             state: State::default(),
+            theorem_index: index,
         })
+    }
+
+    pub fn get_theorem_index(&self, name: &str) -> Option<usize> {
+        self.theorem_index.data.get(name).cloned()
+    }
+
+    pub fn get_theorem_name(&self, idx: usize) -> Option<&str> {
+        self.theorem_index.names.get(idx).map(|x| x.as_str())
     }
 
     pub fn verify_unify(&self) -> KResult {
