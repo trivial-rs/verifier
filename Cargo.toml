@@ -10,4 +10,4 @@ edition = "2018"
 [dependencies]
 trivial-kernel = "0.7.0"
 trivial-compiler = "0.2.0"
-mmb-parser = "0.3.0"
+mmb-parser = "0.4.0"
