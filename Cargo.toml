@@ -8,6 +8,6 @@ license = "MIT OR Apache-2.0"
 edition = "2018"
 
 [dependencies]
-trivial-kernel = "0.7.0"
-trivial-compiler = "0.2.0"
-mmb-parser = "0.4.0"
+trivial-kernel = "0.8.0"
+trivial-compiler = "0.3.0"
+mmb-parser = "0.5.0"
